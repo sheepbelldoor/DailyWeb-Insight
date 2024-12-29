@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DailyWeb Insight - Daily Report</title>
+    <style>
+        :root {
+            --primary-color: #2196F3;
+            --secondary-color: #1976D2;
+            --success-color: #4CAF50;
+            --warning-color: #FFC107;
+            --danger-color: #F44336;
+            --text-color: #333;
+            --border-color: #eee;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            line-height: 1.6;
+            color: var(--text-color);
+            margin: 0;
+            padding: 0;
+            background-color: #f5f5f5;
+        }
+
+        .container {
+            max-width: 800px;
+            margin: 40px auto;
+            padding: 20px;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 40px;
+            padding-bottom: 20px;
+            border-bottom: 2px solid var(--border-color);
+        }
+
+        .header h1 {
+            color: var(--primary-color);
+            margin: 0;
+            font-size: 28px;
+        }
+
+        .header p {
+            color: #666;
+            margin: 10px 0 0;
+        }
+
+        .section {
+            margin-bottom: 40px;
+            padding: 20px;
+            border-radius: 8px;
+            background: #fff;
+            border: 1px solid var(--border-color);
+        }
+
+        .section h2 {
+            color: var(--secondary-color);
+            margin-top: 0;
+            font-size: 22px;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .stat-card {
+            padding: 15px;
+            border-radius: 8px;
+            background: #f8f9fa;
+            text-align: center;
+        }
+
+        .stat-card h3 {
+            margin: 0;
+            font-size: 16px;
+            color: #666;
+        }
+
+        .stat-card .value {
+            font-size: 24px;
+            font-weight: bold;
+            color: var(--primary-color);
+            margin: 10px 0;
+        }
+
+        .productivity-meter {
+            height: 20px;
+            background: #eee;
+            border-radius: 10px;
+            overflow: hidden;
+            margin: 20px 0;
+        }
+
+        .productivity-meter .fill {
+            height: 100%;
+            background: linear-gradient(to right, var(--success-color), var(--primary-color));
+            transition: width 0.3s ease;
+        }
+
+        .top-sites {
+            list-style: none;
+            padding: 0;
+        }
+
+        .site-item {
+            display: flex;
+            align-items: center;
+            padding: 10px;
+            margin-bottom: 10px;
+            border-radius: 6px;
+            background: #f8f9fa;
+        }
+
+        .site-item img {
+            width: 16px;
+            height: 16px;
+            margin-right: 10px;
+        }
+
+        .site-item .domain {
+            flex-grow: 1;
+        }
+
+        .site-item .time {
+            color: #666;
+        }
+
+        .category-chart {
+            margin: 20px 0;
+        }
+
+        .category-bar {
+            display: flex;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+
+        .category-bar .label {
+            width: 120px;
+            font-weight: bold;
+        }
+
+        .category-bar .bar {
+            flex-grow: 1;
+            height: 20px;
+            background: #eee;
+            border-radius: 10px;
+            overflow: hidden;
+        }
+
+        .category-bar .fill {
+            height: 100%;
+            background: var(--primary-color);
+        }
+
+        .category-bar .value {
+            margin-left: 10px;
+            min-width: 60px;
+            text-align: right;
+        }
+
+        .recommendations {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 8px;
+        }
+
+        .recommendations h3 {
+            color: var(--secondary-color);
+            margin-top: 0;
+        }
+
+        .recommendations ul {
+            margin: 0;
+            padding-left: 20px;
+        }
+
+        .recommendations li {
+            margin-bottom: 10px;
+        }
+
+        @media (max-width: 600px) {
+            .container {
+                margin: 0;
+                border-radius: 0;
+            }
+
+            .stats-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Your Daily Web Insight Report</h1>
+            <p>{{date}}</p>
+        </div>
+
+        <div class="section">
+            <h2>Today's Overview</h2>
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <h3>Total Time Online</h3>
+                    <div class="value">{{totalTime}}</div>
+                </div>
+                <div class="stat-card">
+                    <h3>Productivity Score</h3>
+                    <div class="value">{{productivityScore}}%</div>
+                </div>
+                <div class="stat-card">
+                    <h3>Sites Visited</h3>
+                    <div class="value">{{sitesVisited}}</div>
+                </div>
+            </div>
+
+            <div class="productivity-meter">
+                <div class="fill" style="width: {{productivityScore}}%"></div>
+            </div>
+        </div>
+
+        <div class="section">
+            <h2>Top Sites</h2>
+            <ul class="top-sites">
+                {{#topSites}}
+                <li class="site-item">
+                    <img src="https://www.google.com/s2/favicons?domain={{domain}}" alt="{{domain}}">
+                    <span class="domain">{{domain}}</span>
+                    <span class="time">{{timeSpent}}</span>
+                </li>
+                {{/topSites}}
+            </ul>
+        </div>
+
+        <div class="section">
+            <h2>Category Breakdown</h2>
+            <div class="category-chart">
+                {{#categories}}
+                <div class="category-bar">
+                    <span class="label">{{name}}</span>
+                    <div class="bar">
+                        <div class="fill" style="width: {{percentage}}%"></div>
+                    </div>
+                    <span class="value">{{time}}</span>
+                </div>
+                {{/categories}}
+            </div>
+        </div>
+
+        <div class="section">
+            <h2>Insights & Recommendations</h2>
+            <div class="recommendations">
+                <h3>Today's Analysis</h3>
+                <p>{{analysis}}</p>
+                
+                <h3>Recommendations</h3>
+                <ul>
+                    {{#recommendations}}
+                    <li>{{.}}</li>
+                    {{/recommendations}}
+                </ul>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

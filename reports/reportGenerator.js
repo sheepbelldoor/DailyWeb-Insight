@@ -1,142 +1,228 @@
-const nodemailer = require('nodemailer');
-const { Configuration, OpenAIApi } = require('openai');
+const fs = require('fs').promises;
+const path = require('path');
+const Mustache = require('mustache');
+const moment = require('moment');
+const { OpenAI } = require('openai');
 
 class ReportGenerator {
-    constructor(apiKey, emailConfig) {
-        this.openai = new OpenAIApi(new Configuration({ apiKey }));
-        this.transporter = nodemailer.createTransport(emailConfig);
+    constructor(config) {
+        this.templatesDir = path.join(__dirname, 'templates');
+        this.openai = new OpenAI({ apiKey: config.openaiApiKey });
+        this.templates = {};
     }
 
-    async generateReport(stats) {
-        const reportData = await this.analyzeData(stats);
-        const htmlReport = await this.createHtmlReport(reportData);
-        return htmlReport;
-    }
-
-    async analyzeData(stats) {
-        const prompt = this.createAnalysisPrompt(stats);
-        const response = await this.openai.createCompletion({
-            model: "gpt-3.5-turbo",
-            messages: [{
-                role: "user",
-                content: prompt
-            }],
-            temperature: 0.7,
-            max_tokens: 500
-        });
-
-        return {
-            analysis: response.data.choices[0].text,
-            stats: stats
-        };
-    }
-
-    createAnalysisPrompt(stats) {
-        return `Analyze the following web browsing statistics and provide insights:
-            Total time online: ${stats.totalTime} seconds
-            Top sites: ${JSON.stringify(stats.topSites)}
-            Categories: ${JSON.stringify(stats.categories)}
-            Productivity score: ${stats.productivityScore}
-
-            Please provide:
-            1. A summary of the user's browsing habits
-            2. Productivity insights
-            3. Recommendations for improvement
-            4. Notable patterns or trends`;
-    }
-
-    async createHtmlReport(data) {
-        const template = await this.loadTemplate();
-        return this.fillTemplate(template, data);
-    }
-
-    async loadTemplate() {
-        return `
-            <!DOCTYPE html>
-            <html>
-            <head>
-                <style>
-                    body { font-family: Arial, sans-serif; line-height: 1.6; }
-                    .container { max-width: 800px; margin: 0 auto; padding: 20px; }
-                    .header { text-align: center; margin-bottom: 30px; }
-                    .section { margin-bottom: 30px; }
-                    .chart { margin: 20px 0; }
-                </style>
-            </head>
-            <body>
-                <div class="container">
-                    <div class="header">
-                        <h1>Your Daily Web Insight Report</h1>
-                        <p>{{date}}</p>
-                    </div>
-                    <div class="section">
-                        <h2>Today's Summary</h2>
-                        {{summary}}
-                    </div>
-                    <div class="section">
-                        <h2>Productivity Analysis</h2>
-                        {{productivity}}
-                    </div>
-                    <div class="section">
-                        <h2>Recommendations</h2>
-                        {{recommendations}}
-                    </div>
-                </div>
-            </body>
-            </html>
-        `;
-    }
-
-    fillTemplate(template, data) {
-        return template
-            .replace('{{date}}', new Date().toLocaleDateString())
-            .replace('{{summary}}', this.formatSummary(data))
-            .replace('{{productivity}}', this.formatProductivity(data))
-            .replace('{{recommendations}}', data.analysis);
-    }
-
-    formatSummary(data) {
-        const hours = Math.floor(data.stats.totalTime / 3600);
-        const minutes = Math.floor((data.stats.totalTime % 3600) / 60);
-        
-        return `
-            <p>Total time online: ${hours}h ${minutes}m</p>
-            <h3>Top Sites:</h3>
-            <ul>
-                ${data.stats.topSites.map(site => `
-                    <li>${site.domain}: ${Math.round(site.timeSpent / 60)}m</li>
-                `).join('')}
-            </ul>
-        `;
-    }
-
-    formatProductivity(data) {
-        return `
-            <p>Productivity Score: ${data.stats.productivityScore}%</p>
-            <h3>Time by Category:</h3>
-            <ul>
-                ${Object.entries(data.stats.categories).map(([category, time]) => `
-                    <li>${category}: ${Math.round(time / 60)}m</li>
-                `).join('')}
-            </ul>
-        `;
-    }
-
-    async sendReport(email, report) {
-        const mailOptions = {
-            from: 'DailyWeb Insight <noreply@dailywebinsight.com>',
-            to: email,
-            subject: 'Your Daily Web Activity Report',
-            html: report
-        };
-
-        try {
-            await this.transporter.sendMail(mailOptions);
-            return true;
-        } catch (error) {
-            console.error('Error sending email:', error);
-            return false;
+    async initialize() {
+        // Load all templates
+        const templateFiles = ['dailyReport.html', 'weeklyReport.html', 'monthlyReport.html'];
+        for (const file of templateFiles) {
+            const templatePath = path.join(this.templatesDir, file);
+            this.templates[file] = await fs.readFile(templatePath, 'utf-8');
         }
+    }
+
+    async generateDailyReport(data) {
+        const reportData = {
+            date: moment(data.date).format('MMMM D, YYYY'),
+            totalTime: this.formatDuration(data.totalTime),
+            productivityScore: Math.round(data.productivityScore),
+            sitesVisited: data.uniqueSites,
+            topSites: data.topSites.map(site => ({
+                domain: site.domain,
+                timeSpent: this.formatDuration(site.timeSpent)
+            })),
+            categories: data.categories.map(cat => ({
+                name: cat.name,
+                time: this.formatDuration(cat.time),
+                percentage: Math.round(cat.percentage)
+            })),
+            analysis: await this.generateInsights(data, 'daily'),
+            recommendations: await this.generateRecommendations(data, 'daily')
+        };
+
+        return Mustache.render(this.templates['dailyReport.html'], reportData);
+    }
+
+    async generateWeeklyReport(data) {
+        const reportData = {
+            weekRange: `${moment(data.startDate).format('MMM D')} - ${moment(data.endDate).format('MMM D, YYYY')}`,
+            totalTime: this.formatDuration(data.totalTime),
+            avgDailyTime: this.formatDuration(data.avgDailyTime),
+            avgProductivityScore: Math.round(data.avgProductivityScore),
+            uniqueSites: data.uniqueSites,
+            totalTimeChange: this.formatChange(data.totalTimeChange),
+            avgTimeChange: this.formatChange(data.avgTimeChange),
+            productivityChange: this.formatChange(data.productivityChange),
+            sitesChange: this.formatChange(data.sitesChange),
+            totalTimeTrend: data.totalTimeChange >= 0 ? 'up' : 'down',
+            avgTimeTrend: data.avgTimeChange >= 0 ? 'up' : 'down',
+            productivityTrend: data.productivityChange >= 0 ? 'up' : 'down',
+            sitesTrend: data.sitesChange >= 0 ? 'up' : 'down',
+            days: data.dailyStats.map(day => ({
+                dayName: moment(day.date).format('dddd'),
+                totalTime: this.formatDuration(day.totalTime),
+                productivityScore: Math.round(day.productivityScore)
+            })),
+            topSites: data.topSites.map(site => ({
+                domain: site.domain,
+                totalTime: this.formatDuration(site.totalTime),
+                visitsCount: site.visits,
+                avgTimePerVisit: this.formatDuration(site.avgTimePerVisit),
+                productivityImpact: this.formatProductivityImpact(site.productivityImpact)
+            })),
+            categories: data.categories.map(cat => ({
+                name: cat.name,
+                time: this.formatDuration(cat.time),
+                percentage: Math.round(cat.percentage)
+            })),
+            insights: await this.generateInsights(data, 'weekly'),
+            actions: await this.generateRecommendations(data, 'weekly')
+        };
+
+        return Mustache.render(this.templates['weeklyReport.html'], reportData);
+    }
+
+    async generateMonthlyReport(data) {
+        const reportData = {
+            monthYear: moment(data.date).format('MMMM YYYY'),
+            totalTime: this.formatDuration(data.totalTime),
+            avgDailyTime: this.formatDuration(data.avgDailyTime),
+            avgProductivityScore: Math.round(data.avgProductivityScore),
+            uniqueSites: data.uniqueSites,
+            totalTimeChange: this.formatChange(data.totalTimeChange),
+            avgTimeChange: this.formatChange(data.avgTimeChange),
+            productivityChange: this.formatChange(data.productivityChange),
+            sitesChange: this.formatChange(data.sitesChange),
+            totalTimeTrend: data.totalTimeChange >= 0 ? 'up' : 'down',
+            avgTimeTrend: data.avgTimeChange >= 0 ? 'up' : 'down',
+            productivityTrend: data.productivityChange >= 0 ? 'up' : 'down',
+            sitesTrend: data.sitesChange >= 0 ? 'up' : 'down',
+            dailyUsageChart: this.generateChartData(data.dailyStats),
+            productivityChart: this.generateChartData(data.productivityStats),
+            hourlyProductivityChart: this.generateChartData(data.hourlyStats),
+            topSites: data.topSites.map(site => ({
+                domain: site.domain,
+                totalTime: this.formatDuration(site.totalTime),
+                visitsCount: site.visits,
+                avgTimePerVisit: this.formatDuration(site.avgTimePerVisit)
+            })),
+            categories: data.categories.map(cat => ({
+                name: cat.name,
+                time: this.formatDuration(cat.time),
+                percentage: Math.round(cat.percentage)
+            })),
+            comparisons: this.generateComparisons(data),
+            insights: await this.generateInsights(data, 'monthly'),
+            recommendations: await this.generateRecommendations(data, 'monthly')
+        };
+
+        return Mustache.render(this.templates['monthlyReport.html'], reportData);
+    }
+
+    formatDuration(minutes) {
+        if (minutes < 60) {
+            return `${Math.round(minutes)}m`;
+        }
+        const hours = Math.floor(minutes / 60);
+        const remainingMinutes = Math.round(minutes % 60);
+        return remainingMinutes > 0 ? `${hours}h ${remainingMinutes}m` : `${hours}h`;
+    }
+
+    formatChange(value) {
+        const absValue = Math.abs(value);
+        return value >= 0 ? `+${absValue}%` : `-${absValue}%`;
+    }
+
+    formatProductivityImpact(impact) {
+        if (impact > 0) return `+${impact}% productivity`;
+        if (impact < 0) return `${impact}% productivity`;
+        return 'Neutral impact';
+    }
+
+    generateChartData(data) {
+        // 실제 차트 라이브러리에 맞는 데이터 포맷으로 변환
+        // 이 예제에서는 차트 데이터를 문자열로 반환
+        return JSON.stringify(data);
+    }
+
+    generateComparisons(data) {
+        return [
+            {
+                metric: 'Productive Time',
+                currentValue: this.formatDuration(data.productiveTime),
+                previousValue: this.formatDuration(data.previousProductiveTime),
+                change: this.formatChange(data.productiveTimeChange)
+            },
+            {
+                metric: 'Most Visited Site',
+                currentValue: data.topSites[0].domain,
+                previousValue: data.previousTopSite,
+                change: data.topSiteChange
+            },
+            {
+                metric: 'Peak Productivity Hours',
+                currentValue: `${data.peakHours.current.start}-${data.peakHours.current.end}`,
+                previousValue: `${data.peakHours.previous.start}-${data.peakHours.previous.end}`,
+                change: 'N/A'
+            }
+        ];
+    }
+
+    async generateInsights(data, reportType) {
+        try {
+            const prompt = this.createInsightPrompt(data, reportType);
+            const response = await this.openai.chat.completions.create({
+                model: "gpt-4",
+                messages: [{
+                    role: "user",
+                    content: prompt
+                }],
+                temperature: 0.7,
+                max_tokens: 500
+            });
+
+            return response.choices[0].message.content;
+        } catch (error) {
+            console.error('Error generating insights:', error);
+            return 'Unable to generate insights at this time.';
+        }
+    }
+
+    async generateRecommendations(data, reportType) {
+        try {
+            const prompt = this.createRecommendationPrompt(data, reportType);
+            const response = await this.openai.chat.completions.create({
+                model: "gpt-4",
+                messages: [{
+                    role: "user",
+                    content: prompt
+                }],
+                temperature: 0.7,
+                max_tokens: 500
+            });
+
+            return response.choices[0].message.content.split('\n').filter(r => r.trim());
+        } catch (error) {
+            console.error('Error generating recommendations:', error);
+            return ['Focus on maintaining a balanced online schedule'];
+        }
+    }
+
+    createInsightPrompt(data, reportType) {
+        return `Analyze the following ${reportType} web usage data and provide key insights:
+        - Total time online: ${data.totalTime} minutes
+        - Productivity score: ${data.productivityScore}%
+        - Top sites: ${JSON.stringify(data.topSites)}
+        - Category distribution: ${JSON.stringify(data.categories)}
+        Please provide 3-4 key insights about the user's web usage patterns and productivity.`;
+    }
+
+    createRecommendationPrompt(data, reportType) {
+        return `Based on the following ${reportType} web usage data:
+        - Total time online: ${data.totalTime} minutes
+        - Productivity score: ${data.productivityScore}%
+        - Top sites: ${JSON.stringify(data.topSites)}
+        - Category distribution: ${JSON.stringify(data.categories)}
+        Please provide 3-4 actionable recommendations to improve productivity and maintain a healthy online balance.`;
     }
 }
 
